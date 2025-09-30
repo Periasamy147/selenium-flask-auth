@@ -1,26 +1,45 @@
 from flask import Flask, render_template, request, redirect, session, flash, url_for
-import sqlite3
 import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = "your_secret_key"
 
-DB_NAME = "users.db"
+# Secret key for sessions
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "super_secret_key")
+
+# PostgreSQL connection string (from Render)
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://selenium_flask_auth_db_user:YzkAFy8NAZp3la6FobsJ8BHL8ZNKdz8W@dpg-d3ck78t6ubrc73es6s40-a/selenium_flask_auth_db"
+)
+
+# --- Database helpers ---
+def get_db_connection():
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 def init_db():
-    with sqlite3.connect(DB_NAME) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL
-            )
-        """)
-    print("Database initialized!")
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(50) UNIQUE NOT NULL,
+            password TEXT NOT NULL
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+    print("✅ Database initialized")
 
+
+# --- Routes ---
 @app.route("/")
 def home():
     return redirect(url_for("login"))
+
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -32,21 +51,26 @@ def register():
             flash("Fields cannot be empty!", "danger")
             return redirect(url_for("register"))
 
-        if len(username) > 30 or len(password) > 50:
-            flash("Input too long!", "danger")
-            return redirect(url_for("register"))
+        hashed_pw = generate_password_hash(password)
 
         try:
-            with sqlite3.connect(DB_NAME) as conn:
-                conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
-                conn.commit()
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, hashed_pw))
+            conn.commit()
+            cur.close()
+            conn.close()
             flash("Registration successful! Please log in.", "success")
             return redirect(url_for("login"))
-        except sqlite3.IntegrityError:
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            cur.close()
+            conn.close()
             flash("Username already exists!", "danger")
             return redirect(url_for("register"))
 
     return render_template("register.html")
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -58,12 +82,14 @@ def login():
             flash("Fields cannot be empty!", "danger")
             return redirect(url_for("login"))
 
-        with sqlite3.connect(DB_NAME) as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
-            user = cur.fetchone()
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT password FROM users WHERE username = %s", (username,))
+        user = cur.fetchone()
+        cur.close()
+        conn.close()
 
-        if user:
+        if user and check_password_hash(user[0], password):
             session["user"] = username
             flash("Login successful!", "success")
             return redirect(url_for("dashboard"))
@@ -81,126 +107,15 @@ def dashboard():
         return redirect(url_for("login"))
     return render_template("dashboard.html", username=session["user"])
 
+
 @app.route("/logout")
 def logout():
     session.pop("user", None)
     flash("Logged out successfully!", "info")
     return redirect(url_for("login"))
 
+
+# --- Entry point ---
 if __name__ == "__main__":
-    if not os.path.exists(DB_NAME):
-        init_db()
+    init_db()  # create table if not exists
     app.run(host="0.0.0.0", port=5000, debug=True)
-
-
-
-
-
-#------------------------------OLD VERSION------------------------------------------------
-
-
-# from flask import Flask, render_template, request, redirect, session, flash, url_for
-# import sqlite3
-# import os
-
-# app = Flask(__name__)
-# app.secret_key = "your_secret_key"  # Needed for sessions
-
-# DB_NAME = "users.db"
-
-# # ✅ Initialize DB
-# def init_db():
-#     with sqlite3.connect(DB_NAME) as conn:
-#         conn.execute("""
-#             CREATE TABLE IF NOT EXISTS users (
-#                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-#                 username TEXT UNIQUE NOT NULL,
-#                 password TEXT NOT NULL
-#             )
-#         """)
-#     print("Database initialized!")
-
-
-# # ✅ Home route → redirect to login
-# @app.route("/")
-# def home():
-#     return redirect(url_for("login"))
-
-
-# # ✅ Register Page
-# @app.route("/register", methods=["GET", "POST"])
-# def register():
-#     if request.method == "POST":
-#         username = request.form.get("username", "").strip()
-#         password = request.form.get("password", "").strip()
-
-#         # 🔍 Validation
-#         if not username or not password:
-#             flash("Fields cannot be empty!", "danger")
-#             return redirect(url_for("register"))
-
-#         if len(username) > 30 or len(password) > 50:
-#             flash("Input too long!", "danger")
-#             return redirect(url_for("register"))
-
-#         try:
-#             with sqlite3.connect(DB_NAME) as conn:
-#                 conn.execute(
-#                     "INSERT INTO users (username, password) VALUES (?, ?)",
-#                     (username, password),
-#                 )
-#                 conn.commit()
-#             flash("Registration successful! Please log in.", "success")
-#             return redirect(url_for("login"))
-#         except sqlite3.IntegrityError:
-#             flash("Username already exists!", "danger")
-#             return redirect(url_for("register"))
-
-#     return render_template("register.html")
-
-
-# # ✅ Login Page
-# @app.route("/login", methods=["GET", "POST"])
-# def login():
-#     if request.method == "POST":
-#         username = request.form["username"].strip()
-#         password = request.form["password"].strip()
-
-#         with sqlite3.connect(DB_NAME) as conn:
-#             cur = conn.cursor()
-#             cur.execute(
-#                 "SELECT * FROM users WHERE username=? AND password=?",
-#                 (username, password),
-#             )
-#             user = cur.fetchone()
-
-#         if user:
-#             session["user"] = username
-#             return redirect(url_for("dashboard"))
-#         else:
-#             flash("Invalid username or password!", "danger")
-
-#     return render_template("login.html")
-
-
-# # ✅ Dashboard (protected)
-# @app.route("/dashboard")
-# def dashboard():
-#     if "user" not in session:  # 🚨 Block direct access
-#         flash("Please log in first!", "warning")
-#         return redirect(url_for("login"))
-#     return render_template("dashboard.html", username=session["user"])
-
-
-# # ✅ Logout
-# @app.route("/logout")
-# def logout():
-#     session.pop("user", None)
-#     flash("Logged out successfully!", "info")
-#     return redirect(url_for("login"))
-
-
-# if __name__ == "__main__":
-#     if not os.path.exists(DB_NAME):
-#         init_db()
-#     app.run(debug=True)
