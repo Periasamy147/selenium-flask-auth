@@ -9,7 +9,7 @@ app = Flask(__name__)
 # Secret key for sessions
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "super_secret_key")
 
-# PostgreSQL connection string (from Render)
+# ✅ PostgreSQL connection string from Render
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://selenium_flask_auth_db_user:YzkAFy8NAZp3la6FobsJ8BHL8ZNKdz8W@dpg-d3ck78t6ubrc73es6s40-a/selenium_flask_auth_db"
@@ -34,12 +34,10 @@ def init_db():
     conn.close()
     print("✅ Database initialized")
 
-
 # --- Routes ---
 @app.route("/")
 def home():
     return redirect(url_for("login"))
-
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -71,7 +69,6 @@ def register():
 
     return render_template("register.html")
 
-
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -99,7 +96,6 @@ def login():
 
     return render_template("login.html")
 
-
 @app.route("/dashboard")
 def dashboard():
     if "user" not in session:
@@ -107,15 +103,13 @@ def dashboard():
         return redirect(url_for("login"))
     return render_template("dashboard.html", username=session["user"])
 
-
 @app.route("/logout")
 def logout():
     session.pop("user", None)
     flash("Logged out successfully!", "info")
     return redirect(url_for("login"))
 
-
 # --- Entry point ---
 if __name__ == "__main__":
-    init_db()  # create table if not exists
+    init_db()  # ✅ make sure table exists before running
     app.run(host="0.0.0.0", port=5000, debug=True)
