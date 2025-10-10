@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import time
 from selenium import webdriver
@@ -5,15 +6,18 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
 
 # Paths
 CHROME_PATH = r"C:\chromedriver-win64\chromedriver.exe"
 BASE_URL = "http://127.0.0.1:5000"
-DB_PATH = r"C:\Personal\Testing\selenium-flask-auth\users.db"
+DB_PATH = os.path.join(os.path.dirname(__file__), "users.db")
 
-
-# ✅ Ensure test DB schema exists
+# -----------------------------
+# DATABASE FUNCTIONS
+# -----------------------------
 def init_test_db():
+    """Initialize SQLite test DB schema if missing."""
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -25,27 +29,42 @@ def init_test_db():
     conn.commit()
     conn.close()
 
-
-# ✅ Utility to delete user (for clean test runs)
 def delete_user(username):
+    """Delete a user from DB if exists."""
     conn = sqlite3.connect(DB_PATH)
     conn.execute("DELETE FROM users WHERE username=?", (username,))
     conn.commit()
     conn.close()
 
-
-# ✅ Setup driver
+# -----------------------------
+# SELENIUM DRIVER
+# -----------------------------
 def init_driver():
-    service = Service(CHROME_PATH)
-    driver = webdriver.Chrome(service=service)
+    """Initialize Chrome WebDriver for local or GitHub Actions."""
+    options = Options()
+    
+    # Run headless in CI
+    if os.name != "nt":
+        options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.binary_location = "/usr/bin/chromium-browser"
+
+    if os.name == "nt":
+        service = Service(CHROME_PATH)
+        driver = webdriver.Chrome(service=service, options=options)
+    else:
+        driver = webdriver.Chrome(options=options)
+
     wait = WebDriverWait(driver, 10)
     return driver, wait
 
-
-# ✅ Login function
+# -----------------------------
+# APP INTERACTION
+# -----------------------------
 def login(driver, wait, username_val, password_val):
     driver.get(BASE_URL + "/login")
-
     username = wait.until(EC.presence_of_element_located((By.NAME, "username")))
     password = wait.until(EC.presence_of_element_located((By.NAME, "password")))
     login_btn = wait.until(EC.element_to_be_clickable((By.NAME, "login")))
@@ -55,17 +74,12 @@ def login(driver, wait, username_val, password_val):
     password.clear()
     password.send_keys(password_val)
     login_btn.click()
+    time.sleep(1)
 
-    time.sleep(1)  # allow page to reload
     page_source = driver.page_source
-
-    # ❌ Check for failed login first
-    if "Invalid username or password!" in page_source:
-        return False
-    if "Please log in first!" in page_source:
+    if "Invalid username or password!" in page_source or "Please log in first!" in page_source:
         return False
 
-    # ✅ Only attempt logout if login succeeded
     try:
         logout_btn = wait.until(EC.element_to_be_clickable((By.NAME, "logout")))
         logout_btn.click()
@@ -74,17 +88,8 @@ def login(driver, wait, username_val, password_val):
 
     return True
 
-
-
-# ✅ Dashboard function
-def dashboard(driver):
-    driver.get(BASE_URL + "/dashboard")
-    return driver.current_url 
-
-# ✅ Register function
 def register(driver, wait, username_val, password_val):
     driver.get(BASE_URL + "/register")
-
     r_username = wait.until(EC.presence_of_element_located((By.NAME, "username")))
     r_password = wait.until(EC.presence_of_element_located((By.NAME, "password")))
     r_button = wait.until(EC.element_to_be_clickable((By.NAME, "register")))
@@ -94,11 +99,9 @@ def register(driver, wait, username_val, password_val):
     r_password.clear()
     r_password.send_keys(password_val)
     r_button.click()
-
     time.sleep(1)
-    page_source = driver.page_source
 
-    # ✅ Match Flask flash messages
+    page_source = driver.page_source
     if "Fields cannot be empty!" in page_source:
         return False
     if "Username too long!" in page_source:
@@ -110,7 +113,14 @@ def register(driver, wait, username_val, password_val):
 
     return "Registration successful!" in page_source
 
+def dashboard(driver):
+    driver.get(BASE_URL + "/dashboard")
+    return driver.current_url
+
 def logout(driver, wait):
     driver.get(BASE_URL + "/dashboard")
-    l_button = wait.until(EC.element_to_be_clickable((By.NAME, "logout")))
-    l_button.click()
+    try:
+        l_button = wait.until(EC.element_to_be_clickable((By.NAME, "logout")))
+        l_button.click()
+    except:
+        pass
