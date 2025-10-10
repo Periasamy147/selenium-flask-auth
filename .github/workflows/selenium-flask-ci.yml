@@ -1,85 +1,53 @@
-name: Flask Selenium CI
+name: Selenium Flask CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [ master ]
   pull_request:
+    branches: [ master ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
 
-    env:
-      BASE_URL: http://127.0.0.1:5000
-      FLASK_ENV: testing
-      DATABASE_URL: postgresql://flask_user:flask_pass@localhost:5432/flask_db
-      FLASK_SECRET_KEY: super_secret_key
-
     services:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_USER: flask_user
-          POSTGRES_PASSWORD: flask_pass
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
           POSTGRES_DB: flask_db
-        ports: ['5432:5432']
+        ports:
+          - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U flask_user"
+          --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
-      - name: Install system dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y chromium-browser chromium-chromedriver curl
-
-      - name: Install Python dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest selenium
+          pip install selenium pytest
 
-      - name: Run Flask app in background
+      - name: Start Flask app
         run: |
-          nohup python app.py > flask.log 2>&1 &
-          echo "Waiting for Flask to start..."
-          for i in {1..20}; do
-            if curl -s $BASE_URL > /dev/null; then
-              echo "✅ Flask started"
-              break
-            else
-              echo "⏳ Waiting for Flask ($i/20)..."
-              sleep 2
-            fi
-          done
+          export FLASK_APP=app.py
+          nohup python -m flask run --host=0.0.0.0 --port=5000 &
+          sleep 5  # wait for server
 
-      - name: Run Selenium Tests with retries
+      - name: Run Selenium tests
         env:
-          PATH: /usr/lib/chromium-browser/:$PATH
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/flask_db
+          CI: true
         run: |
-          MAX_RETRIES=2
-          n=0
-          until [ $n -ge $MAX_RETRIES ]
-          do
-            echo "Running Selenium tests, attempt $((n+1))..."
-            pytest testing/login_register_test.py -v --disable-warnings && break
-            n=$((n+1))
-            echo "Retrying Selenium tests..."
-            sleep 3
-          done
-
-      - name: Show Flask logs on failure
-        if: failure()
-        run: |
-          echo "----- Flask Logs -----"
-          cat flask.log
+          pytest testing/login_register_test.py --maxfail=1 --disable-warnings -q

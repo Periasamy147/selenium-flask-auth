@@ -1,5 +1,3 @@
-import os
-import sqlite3
 import time
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -9,60 +7,21 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 
 # Paths
-CHROME_PATH = r"C:\chromedriver-win64\chromedriver.exe"
 BASE_URL = "http://127.0.0.1:5000"
-DB_PATH = os.path.join(os.path.dirname(__file__), "users.db")
 
-# -----------------------------
-# DATABASE FUNCTIONS
-# -----------------------------
-def init_test_db():
-    """Initialize SQLite test DB schema if missing."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL CHECK(length(username) <= 30),
-            password TEXT NOT NULL CHECK(length(password) <= 50)
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-def delete_user(username):
-    """Delete a user from DB if exists."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("DELETE FROM users WHERE username=?", (username,))
-    conn.commit()
-    conn.close()
-
-# -----------------------------
-# SELENIUM DRIVER
-# -----------------------------
+# ✅ Setup driver for CI with headless
 def init_driver():
-    """Initialize Chrome WebDriver for local or GitHub Actions."""
     options = Options()
-    
-    # Run headless in CI
-    if os.name != "nt":
-        options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
-        options.binary_location = "/usr/bin/chromium-browser"
+    options.add_argument("--headless=new")  # headless for CI
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
 
-    if os.name == "nt":
-        service = Service(CHROME_PATH)
-        driver = webdriver.Chrome(service=service, options=options)
-    else:
-        driver = webdriver.Chrome(options=options)
-
+    driver = webdriver.Chrome(options=options)
     wait = WebDriverWait(driver, 10)
     return driver, wait
 
-# -----------------------------
-# APP INTERACTION
-# -----------------------------
+# Login
 def login(driver, wait, username_val, password_val):
     driver.get(BASE_URL + "/login")
     username = wait.until(EC.presence_of_element_located((By.NAME, "username")))
@@ -88,6 +47,7 @@ def login(driver, wait, username_val, password_val):
 
     return True
 
+# Register
 def register(driver, wait, username_val, password_val):
     driver.get(BASE_URL + "/register")
     r_username = wait.until(EC.presence_of_element_located((By.NAME, "username")))
@@ -102,25 +62,17 @@ def register(driver, wait, username_val, password_val):
     time.sleep(1)
 
     page_source = driver.page_source
-    if "Fields cannot be empty!" in page_source:
+    if "Fields cannot be empty!" in page_source or "Username already exists!" in page_source:
         return False
-    if "Username too long!" in page_source:
-        return False
-    if "Password too long!" in page_source:
-        return False
-    if "Username already exists!" in page_source:
-        return False
-
     return "Registration successful!" in page_source
 
+# Dashboard
 def dashboard(driver):
     driver.get(BASE_URL + "/dashboard")
     return driver.current_url
 
+# Logout
 def logout(driver, wait):
     driver.get(BASE_URL + "/dashboard")
-    try:
-        l_button = wait.until(EC.element_to_be_clickable((By.NAME, "logout")))
-        l_button.click()
-    except:
-        pass
+    l_button = wait.until(EC.element_to_be_clickable((By.NAME, "logout")))
+    l_button.click()
