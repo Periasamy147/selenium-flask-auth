@@ -1,78 +1,81 @@
-import time
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
+import pytest
+from selenium_helper import init_driver, register, login, dashboard, logout
+import psycopg2
+import os
 
-# Paths
-BASE_URL = "http://127.0.0.1:5000"
+# --- PostgreSQL test DB cleanup ---
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://postgres:postgres@localhost:5432/flask_db"
+)
 
-# ✅ Setup driver for CI with headless
-def init_driver():
-    options = Options()
-    options.add_argument("--headless=new")  # headless for CI
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
+TEST_USER = "TestUser"
+TEST_PASS = "SecurePass123"
 
-    driver = webdriver.Chrome(options=options)
-    wait = WebDriverWait(driver, 10)
-    return driver, wait
+def delete_user(username):
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM users WHERE username = %s", (username,))
+    conn.commit()
+    cur.close()
+    conn.close()
 
-# Login
-def login(driver, wait, username_val, password_val):
-    driver.get(BASE_URL + "/login")
-    username = wait.until(EC.presence_of_element_located((By.NAME, "username")))
-    password = wait.until(EC.presence_of_element_located((By.NAME, "password")))
-    login_btn = wait.until(EC.element_to_be_clickable((By.NAME, "login")))
 
-    username.clear()
-    username.send_keys(username_val)
-    password.clear()
-    password.send_keys(password_val)
-    login_btn.click()
-    time.sleep(1)
+@pytest.fixture(scope="module")
+def driver_wait():
+    driver, wait = init_driver()
+    yield driver, wait
+    driver.quit()
 
-    page_source = driver.page_source
-    if "Invalid username or password!" in page_source or "Please log in first!" in page_source:
-        return False
 
-    try:
-        logout_btn = wait.until(EC.element_to_be_clickable((By.NAME, "logout")))
-        logout_btn.click()
-    except:
-        pass
+def test_register_new_user(driver_wait):
+    driver, wait = driver_wait
+    delete_user(TEST_USER)
+    result = register(driver, wait, TEST_USER, TEST_PASS)
+    assert result, "New user should register successfully"
 
-    return True
 
-# Register
-def register(driver, wait, username_val, password_val):
-    driver.get(BASE_URL + "/register")
-    r_username = wait.until(EC.presence_of_element_located((By.NAME, "username")))
-    r_password = wait.until(EC.presence_of_element_located((By.NAME, "password")))
-    r_button = wait.until(EC.element_to_be_clickable((By.NAME, "register")))
+def test_login_valid_user(driver_wait):
+    driver, wait = driver_wait
+    result = login(driver, wait, TEST_USER, TEST_PASS)
+    assert result, "Valid user should log in successfully"
 
-    r_username.clear()
-    r_username.send_keys(username_val)
-    r_password.clear()
-    r_password.send_keys(password_val)
-    r_button.click()
-    time.sleep(1)
 
-    page_source = driver.page_source
-    if "Fields cannot be empty!" in page_source or "Username already exists!" in page_source:
-        return False
-    return "Registration successful!" in page_source
+def test_wrong_login_password(driver_wait):
+    driver, wait = driver_wait
+    result = login(driver, wait, TEST_USER, "WrongPass")
+    assert not result, "Login should fail with wrong password"
 
-# Dashboard
-def dashboard(driver):
-    driver.get(BASE_URL + "/dashboard")
-    return driver.current_url
 
-# Logout
-def logout(driver, wait):
-    driver.get(BASE_URL + "/dashboard")
-    l_button = wait.until(EC.element_to_be_clickable((By.NAME, "logout")))
-    l_button.click()
+def test_no_user_login(driver_wait):
+    driver, wait = driver_wait
+    result = login(driver, wait, "NotTheUser", "NotThePassword")
+    assert not result, "Login should fail for non-existing user"
+
+
+def test_register_existing_user(driver_wait):
+    driver, wait = driver_wait
+    result = register(driver, wait, TEST_USER, TEST_PASS)
+    assert not result, "Register should fail for existing user"
+
+
+def test_register_empty_fields(driver_wait):
+    driver, wait = driver_wait
+    result = register(driver, wait, "", "")
+    assert not result, "Register should fail for empty fields"
+
+
+def test_register_long_input(driver_wait):
+    driver, wait = driver_wait
+    long_username = "U" * 300
+    long_password = "P" * 300
+    result = register(driver, wait, long_username, long_password)
+    assert not result, "Register should fail for extremely long inputs"
+
+
+def test_direct_dashboard_access(driver_wait):
+    driver, wait = driver_wait
+    url_after = dashboard(driver)
+
+    assert "/login" in url_after or "Login" in driver.page_source, \
+        "Unauthenticated user should be redirected to login, not see dashboard"
