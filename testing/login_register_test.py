@@ -1,12 +1,19 @@
 import pytest
-from selenium_helper import init_driver, delete_user, register, login, init_test_db, dashboard, logout
+from testing.selenium_helper import (
+    init_driver,
+    delete_user,
+    register,
+    login,
+    init_test_db,
+    dashboard,
+    logout
+)
 
-# Initialize test DB schema before running tests
+# Initialize DB before all tests
 init_test_db()
 
 TEST_USER = "TestUser"
 TEST_PASS = "SecurePass123"
-
 
 @pytest.fixture(scope="module")
 def driver_wait():
@@ -61,10 +68,9 @@ def test_register_long_input(driver_wait):
     result = register(driver, wait, long_username, long_password)
     assert not result, "Register should fail for extremely long inputs"
 
+
 def test_direct_dashboard_access(driver_wait):
     driver, wait = driver_wait
     url_after = dashboard(driver)
-
     assert "/login" in url_after or "Login" in driver.page_source, \
         "Unauthenticated user should be redirected to login, not see dashboard"
-    
