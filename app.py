@@ -16,21 +16,23 @@ DATABASE_URL = os.getenv(
 
 # --- Database helpers ---
 def get_db_connection():
-    # ✅ Remove SSL for CI/local if needed
-    if os.getenv("CI") == "true":  # GitHub Actions CI
+    # ✅ CI-safe (GitHub Actions)
+    if os.getenv("CI") == "true":
         return psycopg2.connect(DATABASE_URL)
-    # Use SSL for deployed environments (optional)
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+    return psycopg2.connect(DATABASE_URL)
 
 
 def init_db():
     conn = get_db_connection()
     cur = conn.cursor()
+    # ✅ Add name & age columns if not exist
     cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
             username VARCHAR(50) UNIQUE NOT NULL,
-            password TEXT NOT NULL
+            password TEXT NOT NULL,
+            name VARCHAR(100),
+            age INT
         );
     """)
     conn.commit()
@@ -60,7 +62,10 @@ def register():
         try:
             conn = get_db_connection()
             cur = conn.cursor()
-            cur.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, hashed_pw))
+            cur.execute(
+                "INSERT INTO users (username, password, name, age) VALUES (%s, %s, %s, %s)",
+                (username, hashed_pw, None, None)
+            )
             conn.commit()
             cur.close()
             conn.close()
@@ -104,12 +109,57 @@ def login():
     return render_template("login.html")
 
 
-@app.route("/dashboard")
+@app.route("/dashboard", methods=["GET", "POST"])
 def dashboard():
     if "user" not in session:
         flash("Please log in first!", "warning")
         return redirect(url_for("login"))
-    return render_template("dashboard.html", username=session["user"])
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Fetch current user info
+    cur.execute("SELECT name, age FROM users WHERE username = %s", (session["user"],))
+    user_data = cur.fetchone()
+    name = user_data[0] if user_data and user_data[0] else "N/A"
+    age = user_data[1] if user_data and user_data[1] else "N/A"
+
+    # Handle POST (edit)
+    if request.method == "POST":
+        new_name = request.form.get("name", "").strip()
+        new_age = request.form.get("age", "").strip()
+
+        if not new_name or not new_age:
+            flash("Name and Age cannot be empty!", "danger")
+            return redirect(url_for("dashboard"))
+
+        try:
+            new_age = int(new_age)
+        except ValueError:
+            flash("Age must be a number!", "danger")
+            return redirect(url_for("dashboard"))
+
+        if new_age < 18 or new_age > 100:
+            flash("Age must be between 18 and 100!", "danger")
+            return redirect(url_for("dashboard"))
+
+        cur.execute(
+            "UPDATE users SET name = %s, age = %s WHERE username = %s",
+            (new_name, new_age, session["user"])
+        )
+        conn.commit()
+        flash("Profile updated successfully!", "success")
+        return redirect(url_for("dashboard"))
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "dashboard.html",
+        username=session["user"],
+        name=name,
+        age=age
+    )
 
 
 @app.route("/logout")
@@ -121,5 +171,5 @@ def logout():
 
 # --- Entry point ---
 if __name__ == "__main__":
-    init_db()  # ✅ ensure table exists
+    init_db()
     app.run(host="0.0.0.0", port=5000, debug=True)
