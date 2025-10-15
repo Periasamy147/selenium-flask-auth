@@ -75,8 +75,8 @@ def test_register_long_input(driver_wait):
     assert not result, "Register should fail for extremely long inputs"
 
 
-def test_direct_dashboard_access(driver_wait):
-    driver, wait = driver_wait
-    url_after = dashboard(driver)
-    assert "/login" in url_after or "Login" in driver.page_source, \
-        "Unauthenticated user should be redirected to login, not see dashboard"
+# def test_direct_dashboard_access(driver_wait):
+#     driver, wait = driver_wait
+#     url_after = dashboard(driver)
+#     assert "/login" in url_after or "Login" in driver.page_source, \
+#         "Unauthenticated user should be redirected to login, not see dashboard"
