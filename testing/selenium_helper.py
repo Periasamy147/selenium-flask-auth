@@ -59,12 +59,15 @@ def register(driver, wait, username, password):
     wait.until(EC.presence_of_element_located((By.NAME, "username"))).send_keys(username)
     wait.until(EC.presence_of_element_located((By.NAME, "password"))).send_keys(password)
     wait.until(EC.element_to_be_clickable((By.NAME, "register"))).click()
-    time.sleep(1)
 
-    page_source = driver.page_source
-    if "Fields cannot be empty!" in page_source or "Username already exists!" in page_source:
+    try:
+        wait.until(EC.text_to_be_present_in_element(
+            (By.CLASS_NAME, "alert-success"), "Registration successful!"
+        ))
+        return True
+    except:
         return False
-    return "Registration successful!" in page_source
+
 
 # ✅ Login function
 def login(driver, wait, username, password):
