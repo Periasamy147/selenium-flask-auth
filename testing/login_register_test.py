@@ -1,6 +1,10 @@
 import os
+import time
 import pytest
 import psycopg2
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
 from testing.selenium_helper import (
     init_driver,
     delete_user,
@@ -8,7 +12,8 @@ from testing.selenium_helper import (
     login,
     init_test_db,
     dashboard,
-    logout
+    logout,
+    editUserDetails
 )
 
 # Initialize DB before all tests
@@ -19,11 +24,26 @@ DATABASE_URL = os.getenv(
 )
 TEST_USER = "TestUser"
 TEST_PASS = "SecurePass123"
+USER_NAME = "user"
+USER_AGE = 24
 
 
 @pytest.fixture(scope="module")
 def driver_wait():
-    driver, wait = init_driver()
+    options = Options()
+
+    # Detect if running in GitHub Actions (use headless mode there)
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        print("Running in GitHub Actions: using headless mode")
+        options.add_argument("--headless")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+    else:
+        print("Running locally: showing browser")
+
+    driver = webdriver.Chrome(options=options)
+    wait = WebDriverWait(driver, 10)
     yield driver, wait
     driver.quit()
 
@@ -73,6 +93,12 @@ def test_register_long_input(driver_wait):
     delete_user(long_username)
     result = register(driver, wait, long_username, long_password)
     assert not result, "Register should fail for extremely long inputs"
+
+def test_dit_user(driver_wait):
+    driver, wait = driver_wait
+    edit_success = editUserDetails(driver, wait, TEST_USER, TEST_PASS, USER_NAME, USER_AGE)
+    assert edit_success, "Login should succeed and profile editing succeed."
+    logout(driver, wait)
 
 
 # def test_direct_dashboard_access(driver_wait):

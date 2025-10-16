@@ -48,5 +48,6 @@ jobs:
       - name: Run Selenium Tests
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/flask_db
+          GITHUB_ACTIONS: "true"
         run: |
           pytest testing/login_register_test.py --maxfail=1 --disable-warnings -q

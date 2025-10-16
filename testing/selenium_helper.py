@@ -78,17 +78,46 @@ def login(driver, wait, username, password):
     if "Invalid username or password!" in page_source or "Please log in first!" in page_source:
         return False
 
-    try:
-        wait.until(EC.element_to_be_clickable((By.NAME, "logout"))).click()
-    except:
-        pass
-
+    wait.until(lambda d: "/dashboard" in d.current_url)
     return True
+
+
 
 # ✅ Dashboard direct access
 def dashboard(driver):
     driver.get(BASE_URL + "/dashboard")
-    return driver.current_url
+    return driver.current_url, driver.page_source
+
+# ✅ User details edit
+def editUserDetails(driver, wait, username, password, userName, userAge):
+    login(driver, wait, username, password)
+
+    wait.until(lambda d: "/dashboard" in d.current_url)
+    
+    # wait.until(EC.presence_of_element_located((By.ID, "editBtn")))
+
+    edit_button = wait.until(EC.element_to_be_clickable((By.ID, "editBtn")))
+    driver.execute_script("arguments[0].click();", edit_button)
+
+    wait.until(lambda d: d.find_element(By.ID, "editForm").is_displayed())
+
+    name_input = wait.until(EC.presence_of_element_located((By.NAME, "name")))
+    name_input.clear()
+    name_input.send_keys(userName)
+
+    age_input = wait.until(EC.presence_of_element_located((By.NAME, "age")))
+    age_input.clear()
+    age_input.send_keys(userAge)
+
+    wait.until(EC.element_to_be_clickable((By.ID, "saveForm"))).click()
+    time.sleep(1)
+
+    # Check for success message
+    try:
+        wait.until(EC.text_to_be_present_in_element((By.CLASS_NAME, "alert-success"), "Profile updated successfully!"))
+        return True
+    except:
+        return False
 
 # ✅ Logout function
 def logout(driver, wait):

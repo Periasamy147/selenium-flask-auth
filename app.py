@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, redirect, session, flash, url_for
 import os
+import re
 import psycopg2
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -11,7 +12,7 @@ app.secret_key = os.getenv("FLASK_SECRET_KEY", "super_secret_key")
 # PostgreSQL connection string
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/flask_db"
+    "postgresql://postgres:thegourmet@localhost:5432/flask_db"
 )
 
 # --- Database helpers ---
@@ -53,9 +54,14 @@ def register():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "").strip()
 
+        if len(username) > 50:
+            flash("Username must be under 50 characters!", "danger")
+            return redirect(url_for("register"))\
+
         if not username or not password:
             flash("Fields cannot be empty!", "danger")
             return redirect(url_for("register"))
+        
 
         hashed_pw = generate_password_hash(password)
 
@@ -131,6 +137,10 @@ def dashboard():
 
         if not new_name or not new_age:
             flash("Name and Age cannot be empty!", "danger")
+            return redirect(url_for("dashboard"))
+        
+        if not re.match(r"^[A-Za-z ]+$", new_name):
+            flash("Name can only contain letters and spaces!", "danger")
             return redirect(url_for("dashboard"))
 
         try:
